@@ -1,0 +1,32 @@
+FROM ghostfolio/ghostfolio:latest
+
+USER root
+
+RUN apt-get update && apt-get install -y --no-install-suggests \
+  redis-server \
+  sqlite3 \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /ghostfolio/apps/api
+
+RUN npm install --no-save @prisma/adapter-better-sqlite3@7.10.0 better-sqlite3
+
+COPY patch.mjs /ghostfolio/patch.mjs
+RUN node /ghostfolio/patch.mjs && npx prisma generate && rm -f /ghostfolio/patch.mjs
+
+COPY --chown=node:node entrypoint.sh /ghostfolio/entrypoint.sh
+RUN chmod +x /ghostfolio/entrypoint.sh \
+  && mkdir -p /data \
+  && ln -sf /data /ghostfolio/apps/api/.config/data \
+  && ln -sf /data /ghostfolio/apps/api/prisma/data \
+  && ln -sf /data /ghostfolio/apps/api/data \
+  && chown -R node:node /data /ghostfolio
+
+ENV DATABASE_URL="file:/data/ghostfolio.db" \
+    REDIS_HOST="127.0.0.1" \
+    REDIS_PORT="6379" \
+    ENABLE_FEATURE_MCP="true"
+
+VOLUME ["/data"]
+USER node
+CMD ["/ghostfolio/entrypoint.sh"]
