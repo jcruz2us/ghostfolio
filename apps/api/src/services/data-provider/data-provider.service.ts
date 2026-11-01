@@ -39,7 +39,7 @@ import type { Granularity, UserWithSettings } from '@ghostfolio/common/types';
 
 import { utc } from '@date-fns/utc';
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { DataSource, MarketData, Prisma, SymbolProfile } from '@prisma/client';
+import { DataSource, MarketData, SymbolProfile } from '@prisma/client';
 import { Big } from 'big.js';
 import { eachDayOfInterval, format, isValid } from 'date-fns';
 import { groupBy, isEmpty, isNumber, omit, uniqWith } from 'lodash-es';
@@ -391,23 +391,31 @@ export class DataProviderService implements OnModuleInit {
       return response;
     }
 
-    const assetProfileIdentifierTuples = assetProfileIdentifiers.map(
-      ({ dataSource, symbol }) => {
-        return Prisma.sql`(${dataSource}::"DataSource", ${symbol})`;
-      }
-    );
-
     try {
       const marketDataItems: Pick<
         MarketData,
         'dataSource' | 'date' | 'marketPrice' | 'symbol'
-      >[] = await this.prismaService.$queryRaw`
-          SELECT "dataSource", "date", "marketPrice", "symbol"
-          FROM "MarketData"
-          WHERE ("dataSource", "symbol") IN (${Prisma.join(assetProfileIdentifierTuples)})
-            AND date >= ${format(from, DATE_FORMAT, { in: utc })}::timestamp
-            AND date <= ${format(to, DATE_FORMAT, { in: utc })}::timestamp
-          ORDER BY date;`;
+      >[] = await this.prismaService.marketData.findMany({
+        select: {
+          dataSource: true,
+          date: true,
+          marketPrice: true,
+          symbol: true
+        },
+        where: {
+          OR: assetProfileIdentifiers.map(({ dataSource, symbol }) => ({
+            dataSource,
+            symbol
+          })),
+          date: {
+            gte: new Date(format(from, DATE_FORMAT, { in: utc })),
+            lte: new Date(format(to, DATE_FORMAT, { in: utc }))
+          }
+        },
+        orderBy: {
+          date: 'asc'
+        }
+      });
 
       response = marketDataItems.reduce((r, marketData) => {
         const { dataSource, date, marketPrice, symbol } = marketData;

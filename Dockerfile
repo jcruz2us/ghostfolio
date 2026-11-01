@@ -56,6 +56,7 @@ ENV NODE_ENV=production
 RUN apt-get update && apt-get install -y --no-install-suggests \
   curl \
   openssl \
+  sqlite3 \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --chown=node:node --from=builder /ghostfolio/dist/apps /ghostfolio/apps/
