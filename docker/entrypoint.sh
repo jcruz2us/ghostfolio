@@ -11,7 +11,7 @@ if echo "$DATABASE_URL" | grep -q '^file:'; then
       -e 's/@default("{}")//g' \
       prisma/schema.prisma > "$TMP_SQLITE_SCHEMA"
 
-  npx prisma db push --schema="$TMP_SQLITE_SCHEMA" --skip-generate
+  npx prisma db push --schema="$TMP_SQLITE_SCHEMA"
   rm -f "$TMP_SQLITE_SCHEMA"
 
   DB_FILE=$(echo "$DATABASE_URL" | sed 's|^file:||')
