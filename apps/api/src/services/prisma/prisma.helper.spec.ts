@@ -1,4 +1,6 @@
 import {
+  createManySkippingDuplicates,
+  sqliteAllOperations,
   sqliteCompatibilityExtension,
   stripModeInsensitive
 } from './prisma.helper';
@@ -115,15 +117,82 @@ describe('stripModeInsensitive', () => {
   });
 });
 
+describe('createManySkippingDuplicates', () => {
+  const duplicate = Object.assign(new Error('unique'), { code: 'P2002' });
+
+  it('should strip skipDuplicates and insert the batch in one call', async () => {
+    const query = jest.fn().mockResolvedValue({ count: 2 });
+
+    const result = await createManySkippingDuplicates(
+      { data: [{ id: 1 }, { id: 2 }], skipDuplicates: true },
+      query
+    );
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledWith({ data: [{ id: 1 }, { id: 2 }] });
+    expect(result).toEqual({ count: 2 });
+  });
+
+  it('should fall back to row-by-row inserts and skip duplicates', async () => {
+    const query = jest
+      .fn()
+      .mockRejectedValueOnce(duplicate)
+      .mockResolvedValueOnce({ count: 1 })
+      .mockRejectedValueOnce(duplicate)
+      .mockResolvedValueOnce({ count: 1 });
+
+    const result = await createManySkippingDuplicates(
+      { data: [{ id: 1 }, { id: 2 }, { id: 3 }], skipDuplicates: true },
+      query
+    );
+
+    expect(result).toEqual({ count: 2 });
+    expect(query).toHaveBeenCalledTimes(4);
+  });
+
+  it('should rethrow errors other than unique violations', async () => {
+    const query = jest.fn().mockRejectedValue(new Error('boom'));
+
+    await expect(
+      createManySkippingDuplicates(
+        { data: [{ id: 1 }], skipDuplicates: true },
+        query
+      )
+    ).rejects.toThrow('boom');
+  });
+});
+
 describe('sqliteCompatibilityExtension', () => {
+  const allOperations = sqliteAllOperations;
+
   it('should be defined with the expected extension structure', () => {
     expect(sqliteCompatibilityExtension).toBeDefined();
-    // The structure of the extension might vary slightly depending on the Prisma version and internal implementation.
-    // As long as the extension exists we are fine for this unit test.
+    expect(allOperations).toBeDefined();
   });
 
   it('should intercept operations and strip mode in query args', async () => {
-    // The extension test relies on Prisma internal implementation details which changed
-    // However, stripModeInsensitive logic is verified in isolation.
+    const query = jest.fn().mockResolvedValue(['result']);
+    const args = {
+      where: { name: { mode: 'insensitive', startsWith: 'AAPL' } }
+    };
+
+    const result = await allOperations({ args, operation: 'findMany', query });
+
+    expect(query).toHaveBeenCalledWith({
+      where: { name: { startsWith: 'AAPL' } }
+    });
+    expect(result).toEqual(['result']);
+  });
+
+  it('should route createMany with skipDuplicates through the emulation', async () => {
+    const query = jest.fn().mockResolvedValue({ count: 1 });
+
+    await allOperations({
+      args: { data: [{ id: 1 }], skipDuplicates: true },
+      operation: 'createMany',
+      query
+    });
+
+    expect(query).toHaveBeenCalledWith({ data: [{ id: 1 }] });
   });
 });

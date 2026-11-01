@@ -43,19 +43,73 @@ export function stripModeInsensitive<T = any>(obj: T): T {
 }
 
 /**
+ * Emulates `createMany({ skipDuplicates: true })`, which Prisma does not
+ * support on SQLite. Tries a single batch insert first and, if it hits a
+ * unique constraint (P2002), inserts row by row and skips the duplicates.
+ */
+export async function createManySkippingDuplicates(
+  args: any,
+  query: (args: any) => Promise<any>
+): Promise<{ count: number }> {
+  const { skipDuplicates, ...rest } = args;
+
+  try {
+    return await query(rest);
+  } catch (error) {
+    if (error?.code !== 'P2002') {
+      throw error;
+    }
+  }
+
+  const rows = Array.isArray(rest.data) ? rest.data : [rest.data];
+  let count = 0;
+
+  for (const row of rows) {
+    try {
+      await query({ ...rest, data: [row] });
+      count++;
+    } catch (error) {
+      if (error?.code !== 'P2002') {
+        throw error;
+      }
+    }
+  }
+
+  return { count };
+}
+
+/**
+ * Query handler applied to every model operation on SQLite: strips
+ * PostgreSQL-only filters and emulates `createMany({ skipDuplicates })`.
+ */
+export async function sqliteAllOperations({
+  args,
+  operation,
+  query
+}: {
+  args: any;
+  operation: string;
+  query: (args: any) => Promise<any>;
+}) {
+  if (args) {
+    stripModeInsensitive(args);
+  }
+
+  if (operation === 'createMany' && args?.skipDuplicates) {
+    return createManySkippingDuplicates(args, query);
+  }
+
+  return query(args);
+}
+
+/**
  * Official Prisma Client Extension ($extends) for SQLite compatibility.
- * Intercepts all model operations and transparently sanitizes query arguments.
  */
 export const sqliteCompatibilityExtension = Prisma.defineExtension({
   name: 'sqlite-compatibility',
   query: {
     $allModels: {
-      async $allOperations({ args, query }) {
-        if (args) {
-          stripModeInsensitive(args);
-        }
-        return query(args);
-      }
+      $allOperations: sqliteAllOperations
     }
   }
 });
