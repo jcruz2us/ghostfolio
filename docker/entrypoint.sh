@@ -12,6 +12,8 @@ if echo "$DATABASE_URL" | grep -q '^file:'; then
       prisma/schema.prisma > "$TMP_SQLITE_SCHEMA"
 
   npx prisma db push --schema="$TMP_SQLITE_SCHEMA"
+  # The image ships a client generated for PostgreSQL; regenerate it for SQLite
+  npx prisma generate --schema="$TMP_SQLITE_SCHEMA" --generator client
   rm -f "$TMP_SQLITE_SCHEMA"
 
   DB_FILE=$(echo "$DATABASE_URL" | sed 's|^file:||')
