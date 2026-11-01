@@ -3,7 +3,7 @@
 set -ex
 
 if echo "$DATABASE_URL" | grep -q '^file:'; then
-  TMP_SQLITE_SCHEMA=$(mktemp 2>/dev/null || echo "/tmp/schema.sqlite.prisma")
+  TMP_SQLITE_SCHEMA=$(mktemp prisma/.schema.sqlite.XXXXXX)
   sed -e 's/provider = "postgresql"/provider = "sqlite"/' \
       -e 's/scopes *String\[\] *@default(\[\])/scopes Json?/' \
       -e 's/settings *Json *@default("{}")/settings Json?/' \
